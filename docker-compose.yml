@@ -15,8 +15,9 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    image: quay.io/keycloak/keycloak:26.0
     container_name: aib-keycloak
+    platform: linux/amd64
     command: ["start-dev", "--import-realm"]
     environment:
       KC_DB: postgres
@@ -46,7 +47,7 @@ services:
     build: ./broker
     container_name: aib-broker
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: agent-broker

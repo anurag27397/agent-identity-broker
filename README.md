@@ -16,7 +16,7 @@ docker compose up --build
 
 Then:
 
-- Broker: http://localhost:8000 (health at `/health`, API docs at `/docs`)
+- Broker: http://localhost:8001 (health at `/health`, API docs at `/docs`)
 - Keycloak admin: http://localhost:8080 (`admin` / `admin`)
 - Demo user: `alice` / `alice` in realm `agent-broker`
 
