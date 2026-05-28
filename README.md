@@ -6,7 +6,7 @@ This repo is a working example of how to do it properly: a broker service that a
 
 It demonstrates OAuth 2.1 token exchange (RFC 8693) applied to LLM agents, the pattern most teams will need as soon as they move beyond proofs of concept.
 
-**Status:** in development. Week 4 of 8 (mock tool services).
+**Status:** in development. Week 5 of 8 (Claude agent with tool use).
 
 ## Quickstart
 
@@ -70,6 +70,31 @@ Each tool service fetches the broker's JWKS at `/.well-known/jwks.json`, validat
 signature, issuer, audience (must be its own tool ID), expiry, and the required scope.
 Failure modes return 401 (auth) or 403 (scope) with a clear reason.
 
+## Talk to the agent
+
+Claude calls the same broker + tools you just exercised by hand.
+
+```bash
+python3.12 -m venv agent/.venv && source agent/.venv/bin/activate
+pip install -r agent/requirements.txt
+
+export ANTHROPIC_API_KEY=sk-ant-...  # your personal key
+python agent/main.py
+```
+
+The agent logs in as alice, then runs a chat loop. For every tool call Claude
+wants to make, the agent asks the broker for a 60-second scoped JWT first.
+Allowed calls execute; denied calls (e.g. `send_email` for the analyst role)
+surface back to Claude, which explains the denial to alice.
+
+Sample prompts:
+
+- `list our customers`
+- `what is the balance of account ACC-1004?`
+- `summarize C001 in one line then email ops@example.com about it` (demonstrates the denial)
+
+See [`agent/README.md`](agent/README.md) for details.
+
 ## Run tests
 
 ```bash
@@ -84,6 +109,7 @@ broker/      FastAPI service: OIDC login, session JWTs, scoped JWTs, JWKS
 broker/tests/    18 unit + integration tests
 tools/       Three mock services sharing tool_lib (JWKS validator)
 tools/tests/     11 unit tests covering happy paths and rejection cases
+agent/       Claude agent (Anthropic SDK) that calls the broker + tools
 keycloak/    IdP realm config (preconfigured demo user + client)
 docs/        scope and architecture
 ```

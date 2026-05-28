@@ -5,10 +5,16 @@ from authlib.integrations.starlette_client import OAuth
 from authlib.jose import JsonWebKey, jwt as jose_jwt
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel
 
 from config import settings
 from keys import KeyMaterial
 from tokens import mint_session_token
+
+
+class DevLoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 oauth = OAuth()
@@ -79,6 +85,50 @@ def build_router(material: KeyMaterial) -> APIRouter:
         response = RedirectResponse(url="/")
         response.delete_cookie("session_token")
         return response
+
+    @router.post("/dev-login")
+    async def dev_login(req: DevLoginRequest) -> dict:
+        """DEV-ONLY: Resource-Owner-Password-Credentials grant against
+        Keycloak, then mint a broker session JWT. Intended for the demo
+        agent so it can authenticate without a browser. Do not enable
+        this endpoint in production deployments.
+        """
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                settings.token_endpoint,
+                data={
+                    "grant_type": "password",
+                    "client_id": settings.keycloak_client_id,
+                    "client_secret": settings.keycloak_client_secret,
+                    "username": req.username,
+                    "password": req.password,
+                    "scope": "openid email profile",
+                },
+            )
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=401,
+                detail=f"keycloak rejected credentials: {resp.text}",
+            )
+        id_token = resp.json().get("id_token")
+        if not id_token:
+            raise HTTPException(status_code=500, detail="keycloak returned no id_token")
+
+        claims = await _validate_id_token(id_token)
+        user_claims = {
+            "sub": claims["sub"],
+            "email": claims.get("email"),
+            "preferred_username": claims.get("preferred_username"),
+            "name": claims.get("name"),
+            "roles": claims.get("realm_access", {}).get("roles", []),
+        }
+        session_jwt, payload = mint_session_token(
+            material,
+            user_claims=user_claims,
+            issuer=settings.broker_public_url,
+            ttl_seconds=settings.session_token_ttl_seconds,
+        )
+        return {"session_token": session_jwt, "payload": payload}
 
     return router
 
