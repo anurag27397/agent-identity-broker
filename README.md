@@ -6,7 +6,7 @@ This repo is a working example of how to do it properly: a broker service that a
 
 It demonstrates OAuth 2.1 token exchange (RFC 8693) applied to LLM agents, the pattern most teams will need as soon as they move beyond proofs of concept.
 
-**Status:** in development. Week 1 of 8 (scaffolding).
+**Status:** in development. Week 2 of 8 (user auth + session tokens).
 
 ## Quickstart
 
@@ -16,14 +16,30 @@ docker compose up --build
 
 Then:
 
-- Broker: http://localhost:8001 (health at `/health`, API docs at `/docs`)
+- Broker: http://localhost:8001 (`/health`, `/docs`, `/.well-known/jwks.json`)
 - Keycloak admin: http://localhost:8080 (`admin` / `admin`)
 - Demo user: `alice` / `alice` in realm `agent-broker`
+
+## Try the login flow
+
+1. Open http://localhost:8001/auth/login in a browser.
+2. Sign in as `alice` / `alice` on the Keycloak page.
+3. You land on a page showing your session JWT and decoded payload.
+4. `session_token` is also set as an HttpOnly cookie, so http://localhost:8001/me returns your claims.
+
+The session token is signed with RS256 using a key generated on first startup and published at `/.well-known/jwks.json`. Tool services downstream will verify against that JWKS in later weeks.
+
+## Run tests
+
+```bash
+docker compose exec broker python -m pytest tests/ -v
+```
 
 ## Layout
 
 ```
-broker/      FastAPI service that issues scoped tokens
+broker/      FastAPI service: OIDC login, session JWTs, JWKS
+broker/tests/    unit tests
 keycloak/    IdP realm config (preconfigured demo user + client)
 docs/        architecture, scope
 ```

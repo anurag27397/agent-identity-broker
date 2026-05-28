@@ -50,10 +50,10 @@
       "publicClient": false,
       "secret": "broker-secret-change-me",
       "redirectUris": [
-        "http://localhost:8000/auth/callback",
-        "http://localhost:8000/*"
+        "http://localhost:8001/auth/callback",
+        "http://localhost:8001/*"
       ],
-      "webOrigins": ["http://localhost:8000"],
+      "webOrigins": ["http://localhost:8001"],
       "protocol": "openid-connect",
       "directAccessGrantsEnabled": true,
       "standardFlowEnabled": true,

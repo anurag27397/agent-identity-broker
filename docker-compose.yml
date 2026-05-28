@@ -26,7 +26,9 @@ services:
       KC_DB_PASSWORD: keycloak
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://localhost:8080
       KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
     ports:
@@ -49,14 +51,21 @@ services:
     ports:
       - "8001:8000"
     environment:
-      KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: agent-broker
       KEYCLOAK_CLIENT_ID: broker
       KEYCLOAK_CLIENT_SECRET: broker-secret-change-me
+      KEYCLOAK_PUBLIC_URL: http://localhost:8080
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      BROKER_PUBLIC_URL: http://localhost:8001
+      SESSION_SECRET: dev-session-secret-change-me
+      KEYS_DIR: /app/keys
       LOG_LEVEL: INFO
+    volumes:
+      - broker_keys:/app/keys
     depends_on:
       keycloak:
         condition: service_healthy
 
 volumes:
   postgres_data:
+  broker_keys:
