@@ -1,0 +1,67 @@
+{
+  "realm": "agent-broker",
+  "enabled": true,
+  "displayName": "Agent Identity Broker",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "sslRequired": "none",
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Alice",
+      "lastName": "Demo",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["analyst"]
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "analyst",
+        "description": "Demo role with read access to customer and finance data"
+      },
+      {
+        "name": "admin",
+        "description": "Demo admin role"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "broker",
+      "name": "Agent Identity Broker",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "broker-secret-change-me",
+      "redirectUris": [
+        "http://localhost:8000/auth/callback",
+        "http://localhost:8000/*"
+      ],
+      "webOrigins": ["http://localhost:8000"],
+      "protocol": "openid-connect",
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": true,
+      "attributes": {
+        "access.token.lifespan": "3600"
+      }
+    }
+  ]
+}
