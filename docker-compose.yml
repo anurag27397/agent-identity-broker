@@ -46,6 +46,7 @@ services:
       start_period: 30s
 
   broker:
+    hostname: broker
     build: ./broker
     container_name: aib-broker
     ports:
@@ -65,6 +66,45 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
+
+  customer-data:
+    build: ./tools
+    container_name: aib-customer-data
+    environment:
+      TOOL_MODULE: customer_data
+      BROKER_PUBLIC_URL: http://localhost:8001
+      BROKER_INTERNAL_URL: http://broker:8000
+    ports:
+      - "8101:8000"
+    depends_on:
+      broker:
+        condition: service_started
+
+  finance-data:
+    build: ./tools
+    container_name: aib-finance-data
+    environment:
+      TOOL_MODULE: finance_data
+      BROKER_PUBLIC_URL: http://localhost:8001
+      BROKER_INTERNAL_URL: http://broker:8000
+    ports:
+      - "8102:8000"
+    depends_on:
+      broker:
+        condition: service_started
+
+  email-send:
+    build: ./tools
+    container_name: aib-email-send
+    environment:
+      TOOL_MODULE: email_send
+      BROKER_PUBLIC_URL: http://localhost:8001
+      BROKER_INTERNAL_URL: http://broker:8000
+    ports:
+      - "8103:8000"
+    depends_on:
+      broker:
+        condition: service_started
 
 volumes:
   postgres_data:
