@@ -6,7 +6,7 @@ This repo is a working example of how to do it properly: a broker service that a
 
 It demonstrates OAuth 2.1 token exchange (RFC 8693) applied to LLM agents, the pattern most teams will need as soon as they move beyond proofs of concept.
 
-**Status:** in development. Week 2 of 8 (user auth + session tokens).
+**Status:** in development. Week 3 of 8 (scoped token exchange).
 
 ## Quickstart
 
@@ -28,6 +28,23 @@ Then:
 4. `session_token` is also set as an HttpOnly cookie, so http://localhost:8001/me returns your claims.
 
 The session token is signed with RS256 using a key generated on first startup and published at `/.well-known/jwks.json`. Tool services downstream will verify against that JWKS in later weeks.
+
+## Try token exchange
+
+Once you have a session token, exchange it for a 60-second scoped token:
+
+```bash
+SESSION="<your session JWT>"
+
+curl -sS -X POST http://localhost:8001/token/exchange \
+  -H "Content-Type: application/json" \
+  -d "{\"subject_token\":\"$SESSION\",\"audience\":\"customer-data\",\"scope\":\"customer-data:read\"}"
+```
+
+Allowed for `alice` (role `analyst`): `customer-data:read`, `finance-data:read`.
+Denied for `alice`: `email-send`, `customer-data:write`. Denials return HTTP 403 with the reason.
+
+Policy lives in [`broker/policy.py`](broker/policy.py) as a hardcoded role-to-scope map.
 
 ## Run tests
 

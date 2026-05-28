@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     session_secret: str = "dev-session-secret-change-me"
     session_token_ttl_seconds: int = 3600
+    scoped_token_ttl_seconds: int = 60
 
     keys_dir: str = "/app/keys"
 

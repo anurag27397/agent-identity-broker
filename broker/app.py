@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from starlette.middleware.sessions import SessionMiddleware
 
 import auth
+import exchange
 from config import settings
 from keys import load_or_generate
 from tokens import TokenError, verify_session_token
@@ -25,6 +26,7 @@ app = FastAPI(
 
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 app.include_router(auth.build_router(material))
+app.include_router(exchange.build_router(material))
 
 
 def current_user(request: Request) -> dict:
@@ -60,6 +62,7 @@ async def root() -> dict:
         "version": "0.2.0",
         "login": "/auth/login",
         "me": "/me",
+        "token_exchange": "/token/exchange",
         "jwks": "/.well-known/jwks.json",
         "docs": "/docs",
     }
