@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, EmailStr
 
-from tool_lib import ToolConfig, require_scope
+from tool_lib import AuditMiddleware, ToolConfig, require_scope
 
 
 config = ToolConfig(
@@ -31,6 +31,11 @@ class SendRequest(BaseModel):
 
 
 app = FastAPI(title="email-send tool", version="0.1.0")
+app.add_middleware(
+    AuditMiddleware,
+    tool_id=config.tool_id,
+    broker_internal_url=config.broker_internal_url,
+)
 
 
 @app.get("/health")

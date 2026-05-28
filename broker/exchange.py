@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from audit import AuditStore, SCOPED_DENIED, SCOPED_MINTED
 from config import settings
 from keys import KeyMaterial
 from policy import evaluate
@@ -27,7 +28,7 @@ class TokenExchangeResponse(BaseModel):
     audience: str
 
 
-def build_router(material: KeyMaterial) -> APIRouter:
+def build_router(material: KeyMaterial, store: AuditStore) -> APIRouter:
     router = APIRouter(prefix="/token", tags=["exchange"])
 
     @router.post("/exchange", response_model=TokenExchangeResponse)
@@ -46,15 +47,33 @@ def build_router(material: KeyMaterial) -> APIRouter:
         roles: list[str] = list(session_claims.get("roles") or [])
         decision = evaluate(roles=roles, audience=req.audience, scope=req.scope)
         if not decision.allowed:
+            store.record(
+                event_type=SCOPED_DENIED,
+                actor_sub=session_claims.get("sub"),
+                actor_username=session_claims.get("preferred_username"),
+                session_id=session_claims.get("session_id"),
+                audience=req.audience,
+                scope=req.scope,
+                reason=decision.reason,
+            )
             raise HTTPException(status_code=403, detail=decision.reason)
 
-        token, _ = mint_scoped_token(
+        token, payload = mint_scoped_token(
             material,
             session_claims=session_claims,
             audience=req.audience,
             scope=req.scope,
             issuer=settings.broker_public_url,
             ttl_seconds=settings.scoped_token_ttl_seconds,
+        )
+        store.record(
+            event_type=SCOPED_MINTED,
+            actor_sub=session_claims.get("sub"),
+            actor_username=session_claims.get("preferred_username"),
+            session_id=session_claims.get("session_id"),
+            jti=payload["jti"],
+            audience=req.audience,
+            scope=req.scope,
         )
 
         return TokenExchangeResponse(

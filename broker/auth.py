@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
+from audit import AuditStore, LOGIN, SESSION_MINTED
 from config import settings
 from keys import KeyMaterial
 from tokens import mint_session_token
@@ -29,7 +30,7 @@ oauth.register(
 )
 
 
-def build_router(material: KeyMaterial) -> APIRouter:
+def build_router(material: KeyMaterial, store: AuditStore) -> APIRouter:
     router = APIRouter(prefix="/auth", tags=["auth"])
 
     @router.get("/login")
@@ -69,6 +70,7 @@ def build_router(material: KeyMaterial) -> APIRouter:
             issuer=settings.broker_public_url,
             ttl_seconds=settings.session_token_ttl_seconds,
         )
+        _record_login(store, payload, source="oidc-callback")
 
         response = HTMLResponse(_render_success(session_jwt, payload))
         response.set_cookie(
@@ -128,9 +130,20 @@ def build_router(material: KeyMaterial) -> APIRouter:
             issuer=settings.broker_public_url,
             ttl_seconds=settings.session_token_ttl_seconds,
         )
+        _record_login(store, payload, source="dev-login")
         return {"session_token": session_jwt, "payload": payload}
 
     return router
+
+
+def _record_login(store: AuditStore, payload: dict, *, source: str) -> None:
+    common = {
+        "actor_sub": payload.get("sub"),
+        "actor_username": payload.get("preferred_username"),
+        "session_id": payload.get("session_id"),
+    }
+    store.record(event_type=LOGIN, **common, metadata={"source": source})
+    store.record(event_type=SESSION_MINTED, **common)
 
 
 async def _validate_id_token(id_token: str) -> dict:

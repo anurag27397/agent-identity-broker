@@ -4,7 +4,9 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from starlette.middleware.sessions import SessionMiddleware
 
 import auth
+import audit_router
 import exchange
+from audit import AuditStore
 from config import settings
 from keys import load_or_generate
 from tokens import TokenError, verify_session_token
@@ -17,16 +19,20 @@ logger = logging.getLogger("broker")
 material = load_or_generate(settings.keys_dir)
 logger.info("Loaded signing key kid=%s", material.kid)
 
+store = AuditStore(settings.audit_db_path)
+logger.info("Audit log at %s", settings.audit_db_path)
+
 
 app = FastAPI(
     title="Agent Identity Broker",
-    version="0.2.0",
+    version="0.3.0",
     description="Identity governance for AI agents",
 )
 
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
-app.include_router(auth.build_router(material))
-app.include_router(exchange.build_router(material))
+app.include_router(auth.build_router(material, store))
+app.include_router(exchange.build_router(material, store))
+app.include_router(audit_router.build_router(store))
 
 
 def current_user(request: Request) -> dict:
@@ -63,6 +69,7 @@ async def root() -> dict:
         "login": "/auth/login",
         "me": "/me",
         "token_exchange": "/token/exchange",
+        "dashboard": "/dashboard",
         "jwks": "/.well-known/jwks.json",
         "docs": "/docs",
     }

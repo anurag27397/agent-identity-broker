@@ -14,6 +14,9 @@ import httpx
 import jwt
 from fastapi import Header, HTTPException, status
 from jwt import PyJWK
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 
 logger = logging.getLogger("tool_lib")
@@ -109,6 +112,64 @@ class ToolConfig:
                 ),
             )
         return claims
+
+
+class AuditMiddleware(BaseHTTPMiddleware):
+    """Best-effort fire-and-forget logging to the broker's /audit/event.
+
+    Decodes the Bearer token without verifying (the require_scope dep
+    already does proper verification on the request path). The decode
+    is only used to attribute the call in the audit log.
+    """
+
+    def __init__(self, app, *, tool_id: str, broker_internal_url: str):
+        super().__init__(app)
+        self.tool_id = tool_id
+        self.audit_url = broker_internal_url.rstrip("/") + "/audit/event"
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        actor_sub = session_id = jti = scope_claim = actor_username = None
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+            try:
+                claims = jwt.decode(
+                    token,
+                    options={"verify_signature": False, "verify_exp": False, "verify_aud": False},
+                )
+                actor_sub = claims.get("sub")
+                session_id = claims.get("session_id")
+                jti = claims.get("jti")
+                scope_claim = claims.get("scope")
+                actor_username = claims.get("preferred_username")
+            except Exception:
+                pass
+
+        response = await call_next(request)
+
+        if request.url.path == "/health" or request.url.path == "/docs":
+            return response
+
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(
+                    self.audit_url,
+                    json={
+                        "actor_sub": actor_sub,
+                        "actor_username": actor_username,
+                        "session_id": session_id,
+                        "jti": jti,
+                        "audience": self.tool_id,
+                        "scope": scope_claim,
+                        "method": request.method,
+                        "path": request.url.path,
+                        "status": response.status_code,
+                    },
+                )
+        except Exception as e:
+            logger.debug("audit POST failed (ignored): %s", e)
+
+        return response
 
 
 def require_scope(config: ToolConfig, scope: str) -> Callable[..., Awaitable[dict]]:

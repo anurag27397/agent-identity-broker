@@ -6,8 +6,9 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
-    # isolate keys to a temp dir before importing the app module
+    # isolate keys and audit DB to a temp dir before importing the app module
     monkeypatch.setenv("KEYS_DIR", str(tmp_path / "keys"))
+    monkeypatch.setenv("AUDIT_DB_PATH", str(tmp_path / "audit.db"))
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
     # force a fresh import so settings picks up the env
     import importlib

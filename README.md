@@ -6,7 +6,7 @@ This repo is a working example of how to do it properly: a broker service that a
 
 It demonstrates OAuth 2.1 token exchange (RFC 8693) applied to LLM agents, the pattern most teams will need as soon as they move beyond proofs of concept.
 
-**Status:** in development. Week 5 of 8 (Claude agent with tool use).
+**Status:** in development. Week 6 of 8 (audit log + dashboard).
 
 ## Quickstart
 
@@ -94,6 +94,18 @@ Sample prompts:
 - `summarize C001 in one line then email ops@example.com about it` (demonstrates the denial)
 
 See [`agent/README.md`](agent/README.md) for details.
+
+## Watch the audit dashboard
+
+Open http://localhost:8001/dashboard while the agent is running. HTMX polls
+every 2 seconds, so each new event (login, scoped token mint, tool call, denial)
+appears live. Click a session in the left rail to filter to just that session's
+chain.
+
+Every event has a stable `session_id` and (for token-related events) a `jti` so
+the broker's "I minted this scoped token" can be correlated with the tool's
+"someone called me with that token" in one query. The SQLite file lives at
+`/app/data/audit.db` inside the broker container.
 
 ## Run tests
 

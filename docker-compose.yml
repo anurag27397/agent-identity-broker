@@ -60,9 +60,11 @@ services:
       BROKER_PUBLIC_URL: http://localhost:8001
       SESSION_SECRET: dev-session-secret-change-me
       KEYS_DIR: /app/keys
+      AUDIT_DB_PATH: /app/data/audit.db
       LOG_LEVEL: INFO
     volumes:
       - broker_keys:/app/keys
+      - broker_data:/app/data
     depends_on:
       keycloak:
         condition: service_healthy
@@ -109,3 +111,4 @@ services:
 volumes:
   postgres_data:
   broker_keys:
+  broker_data:

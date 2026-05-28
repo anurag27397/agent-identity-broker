@@ -1,0 +1,18 @@
+{% if not events %}
+  <div class="empty">no events yet.</div>
+{% endif %}
+{% for e in events %}
+  <div class="event">
+    <span class="ts">{{ e.ts[11:23] }}</span>
+    <span class="ev-type ev-{{ e.event_type }}">{{ e.event_type }}</span>
+    <span class="details">
+      {% if e.actor_username %}<strong>{{ e.actor_username }}</strong>{% endif %}
+      {% if e.audience %} <code>{{ e.audience }}</code>{% endif %}
+      {% if e.scope %} scope <code>{{ e.scope }}</code>{% endif %}
+      {% if e.method and e.path %} <code>{{ e.method }} {{ e.path }}</code>{% endif %}
+      {% if e.status %} → <code>{{ e.status }}</code>{% endif %}
+      {% if e.jti %} <span style="color: var(--dim);">jti=<code>{{ e.jti[:8] }}…</code></span>{% endif %}
+      {% if e.reason %}<div class="reason">{{ e.reason }}</div>{% endif %}
+    </span>
+  </div>
+{% endfor %}

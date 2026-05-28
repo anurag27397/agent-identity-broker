@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     scoped_token_ttl_seconds: int = 60
 
     keys_dir: str = "/app/keys"
+    audit_db_path: str = "/app/data/audit.db"
 
     log_level: str = "INFO"
 
