@@ -96,6 +96,9 @@
   .ev-scoped_token_denied { background: rgba(248,81,73,0.18); color: var(--red); }
   .ev-tool_call { background: rgba(188,140,255,0.15); color: var(--purple); }
   .ev-session_revoked { background: rgba(240,136,62,0.15); color: var(--orange); }
+  .ev-session_unrevoked { background: rgba(126,231,135,0.10); color: var(--green); }
+  .ev-kill_switch_engaged { background: rgba(248,81,73,0.18); color: var(--red); }
+  .ev-kill_switch_disengaged { background: rgba(126,231,135,0.10); color: var(--green); }
   .event .details { color: var(--muted); }
   .event .details strong { color: var(--text); }
   .event .details code { background: var(--bg-card); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
@@ -103,6 +106,57 @@
   .empty { padding: 40px; color: var(--dim); text-align: center; font-size: 13px; }
   a { color: var(--blue); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  button, .btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover, .btn:hover { background: var(--bg); border-color: var(--border-strong); }
+  button.danger { color: var(--red); border-color: rgba(248,81,73,0.3); }
+  button.danger:hover { background: rgba(248,81,73,0.1); }
+  button.success { color: var(--green); border-color: rgba(126,231,135,0.3); }
+  button.success:hover { background: rgba(126,231,135,0.1); }
+  form { display: inline; }
+  .kill-banner {
+    padding: 10px 22px;
+    background: rgba(248,81,73,0.15);
+    color: var(--red);
+    border-bottom: 1px solid rgba(248,81,73,0.3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .kill-banner-ok {
+    padding: 8px 22px;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .revoked-tag {
+    display: inline-block;
+    margin-left: 6px;
+    background: rgba(240,136,62,0.18);
+    color: var(--orange);
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .session-actions { padding: 12px 22px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; }
+  .session-actions .label { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -111,6 +165,22 @@
   <h1>agent-identity-broker · audit</h1>
   <div class="meta">live polling every 2s</div>
 </header>
+
+{% if kill_switch_on %}
+  <div class="kill-banner">
+    <span>kill switch ENGAGED · all token exchanges denied with 503</span>
+    <form method="post" action="/kill-switch/disengage">
+      <button type="submit" class="success">disengage</button>
+    </form>
+  </div>
+{% else %}
+  <div class="kill-banner-ok">
+    <span>kill switch off · normal operation</span>
+    <form method="post" action="/kill-switch" onsubmit="return confirm('Engage broker kill switch? All exchanges will be denied until disengaged.');">
+      <button type="submit" class="danger">engage kill switch</button>
+    </form>
+  </div>
+{% endif %}
 
 <main>
   <aside id="sessions"
@@ -124,11 +194,28 @@
     <h2>
       {% if selected_session %}
         events &middot; <code>{{ selected_session }}</code>
+        {% if selected_revoked %}<span class="revoked-tag">revoked</span>{% endif %}
       {% else %}
         recent events &middot; all sessions
       {% endif %}
       <span class="live">live</span>
     </h2>
+    {% if selected_session %}
+    <div class="session-actions">
+      <span class="label">session controls:</span>
+      {% if selected_revoked %}
+        <form method="post" action="/sessions/{{ selected_session }}/unrevoke">
+          <button type="submit" class="success">unrevoke</button>
+        </form>
+      {% else %}
+        <form method="post" action="/sessions/{{ selected_session }}/revoke"
+              onsubmit="return confirm('Revoke this session? Any future token exchange will fail.');">
+          <button type="submit" class="danger">revoke session</button>
+        </form>
+      {% endif %}
+      <a href="/dashboard" class="btn">back to all</a>
+    </div>
+    {% endif %}
     <div id="events"
          hx-get="/dashboard/feed{% if selected_session %}?session_id={{ selected_session }}{% endif %}"
          hx-trigger="every 2s"

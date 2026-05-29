@@ -51,6 +51,9 @@ SCOPED_MINTED = "scoped_token_minted"
 SCOPED_DENIED = "scoped_token_denied"
 TOOL_CALL = "tool_call"
 SESSION_REVOKED = "session_revoked"
+SESSION_UNREVOKED = "session_unrevoked"
+KILL_SWITCH_ENGAGED = "kill_switch_engaged"
+KILL_SWITCH_DISENGAGED = "kill_switch_disengaged"
 
 
 class AuditStore:

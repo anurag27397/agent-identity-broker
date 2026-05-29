@@ -5,6 +5,7 @@ from audit import AuditStore, SCOPED_DENIED, SCOPED_MINTED
 from config import settings
 from keys import KeyMaterial
 from policy import evaluate
+from revocation import RevocationStore
 from tokens import (
     ISSUED_TOKEN_TYPE_ACCESS,
     TokenError,
@@ -28,7 +29,9 @@ class TokenExchangeResponse(BaseModel):
     audience: str
 
 
-def build_router(material: KeyMaterial, store: AuditStore) -> APIRouter:
+def build_router(
+    material: KeyMaterial, store: AuditStore, rev: RevocationStore
+) -> APIRouter:
     router = APIRouter(prefix="/token", tags=["exchange"])
 
     @router.post("/exchange", response_model=TokenExchangeResponse)
@@ -44,6 +47,34 @@ def build_router(material: KeyMaterial, store: AuditStore) -> APIRouter:
                 status_code=401, detail=f"invalid subject_token: {e}"
             ) from e
 
+        session_id = session_claims.get("session_id")
+
+        if rev.is_kill_switch_on():
+            reason = "broker kill switch is engaged"
+            store.record(
+                event_type=SCOPED_DENIED,
+                actor_sub=session_claims.get("sub"),
+                actor_username=session_claims.get("preferred_username"),
+                session_id=session_id,
+                audience=req.audience,
+                scope=req.scope,
+                reason=reason,
+            )
+            raise HTTPException(status_code=503, detail=reason)
+
+        if session_id and rev.is_revoked(session_id):
+            reason = "session has been revoked"
+            store.record(
+                event_type=SCOPED_DENIED,
+                actor_sub=session_claims.get("sub"),
+                actor_username=session_claims.get("preferred_username"),
+                session_id=session_id,
+                audience=req.audience,
+                scope=req.scope,
+                reason=reason,
+            )
+            raise HTTPException(status_code=403, detail=reason)
+
         roles: list[str] = list(session_claims.get("roles") or [])
         decision = evaluate(roles=roles, audience=req.audience, scope=req.scope)
         if not decision.allowed:
@@ -51,7 +82,7 @@ def build_router(material: KeyMaterial, store: AuditStore) -> APIRouter:
                 event_type=SCOPED_DENIED,
                 actor_sub=session_claims.get("sub"),
                 actor_username=session_claims.get("preferred_username"),
-                session_id=session_claims.get("session_id"),
+                session_id=session_id,
                 audience=req.audience,
                 scope=req.scope,
                 reason=decision.reason,

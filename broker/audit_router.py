@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from audit import AuditStore, TOOL_CALL
+from revocation import RevocationStore
 
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -24,7 +25,7 @@ class ToolCallEvent(BaseModel):
     reason: str | None = None
 
 
-def build_router(store: AuditStore) -> APIRouter:
+def build_router(store: AuditStore, rev: RevocationStore) -> APIRouter:
     router = APIRouter(tags=["audit"])
 
     @router.post("/audit/event")
@@ -54,6 +55,7 @@ def build_router(store: AuditStore) -> APIRouter:
     def dashboard(request: Request, session_id: str | None = None) -> HTMLResponse:
         sessions = store.recent_sessions()
         events = store.events_for_session(session_id) if session_id else store.all_events()
+        revoked_ids = rev.list_revoked()
         return templates.TemplateResponse(
             "dashboard.html",
             {
@@ -61,6 +63,9 @@ def build_router(store: AuditStore) -> APIRouter:
                 "sessions": sessions,
                 "events": events,
                 "selected_session": session_id,
+                "selected_revoked": session_id in revoked_ids if session_id else False,
+                "revoked_ids": revoked_ids,
+                "kill_switch_on": rev.is_kill_switch_on(),
             },
         )
 
@@ -75,9 +80,15 @@ def build_router(store: AuditStore) -> APIRouter:
     @router.get("/dashboard/sessions", response_class=HTMLResponse)
     def dashboard_sessions(request: Request) -> HTMLResponse:
         sessions = store.recent_sessions()
+        revoked_ids = rev.list_revoked()
         return templates.TemplateResponse(
             "_sessions.html",
-            {"request": request, "sessions": sessions, "selected_session": None},
+            {
+                "request": request,
+                "sessions": sessions,
+                "selected_session": None,
+                "revoked_ids": revoked_ids,
+            },
         )
 
     return router

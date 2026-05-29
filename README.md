@@ -6,7 +6,7 @@ This repo is a working example of how to do it properly: a broker service that a
 
 It demonstrates OAuth 2.1 token exchange (RFC 8693) applied to LLM agents, the pattern most teams will need as soon as they move beyond proofs of concept.
 
-**Status:** in development. Week 6 of 8 (audit log + dashboard).
+**Status:** in development. Week 7 of 8 (revocation + kill switch).
 
 ## Quickstart
 
@@ -106,6 +106,25 @@ Every event has a stable `session_id` and (for token-related events) a `jti` so
 the broker's "I minted this scoped token" can be correlated with the tool's
 "someone called me with that token" in one query. The SQLite file lives at
 `/app/data/audit.db` inside the broker container.
+
+## Revocation and kill switch
+
+Two operator controls on the dashboard.
+
+**Per-session revoke.** Click into any session, then "revoke session". From that
+moment forward any `/token/exchange` call using that session JWT fails with
+`403 session has been revoked`. The session's still-valid 1-hour session JWT
+can't mint new scoped tokens. The existing in-flight 60-second scoped tokens
+work until they expire on their own. Click "unrevoke" to restore.
+
+**Broker kill switch.** A global "stop minting anything" flag. While engaged,
+`/token/exchange` returns `503 broker kill switch is engaged` for every caller.
+Useful when something looks wrong and you want to freeze the agent fleet while
+you investigate. Click "engage kill switch" in the dashboard header; click
+"disengage" to restore.
+
+Both states are stored in SQLite, so they survive a broker restart. Every
+transition (revoke, unrevoke, engage, disengage) emits its own audit event.
 
 ## Run tests
 

@@ -5,7 +5,10 @@
 {% for s in sessions %}
   <a href="/dashboard?session_id={{ s.session_id }}"
      class="session-row {% if s.session_id == selected_session %}active{% endif %}">
-    <div class="sid">{{ s.session_id[:8] }}…{{ s.session_id[-4:] }}</div>
+    <div class="sid">
+      {{ s.session_id[:8] }}…{{ s.session_id[-4:] }}
+      {% if s.session_id in revoked_ids %}<span class="revoked-tag">revoked</span>{% endif %}
+    </div>
     <div class="meta">
       <strong>{{ s.actor_username or 'unknown' }}</strong> &middot; {{ s.event_count }} events
     </div>

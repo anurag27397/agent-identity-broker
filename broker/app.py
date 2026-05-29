@@ -6,9 +6,11 @@ from starlette.middleware.sessions import SessionMiddleware
 import auth
 import audit_router
 import exchange
+import revocation_router
 from audit import AuditStore
 from config import settings
 from keys import load_or_generate
+from revocation import RevocationStore
 from tokens import TokenError, verify_session_token
 
 
@@ -20,19 +22,21 @@ material = load_or_generate(settings.keys_dir)
 logger.info("Loaded signing key kid=%s", material.kid)
 
 store = AuditStore(settings.audit_db_path)
+rev = RevocationStore(settings.audit_db_path)
 logger.info("Audit log at %s", settings.audit_db_path)
 
 
 app = FastAPI(
     title="Agent Identity Broker",
-    version="0.3.0",
+    version="0.4.0",
     description="Identity governance for AI agents",
 )
 
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 app.include_router(auth.build_router(material, store))
-app.include_router(exchange.build_router(material, store))
-app.include_router(audit_router.build_router(store))
+app.include_router(exchange.build_router(material, store, rev))
+app.include_router(audit_router.build_router(store, rev))
+app.include_router(revocation_router.build_router(rev, store))
 
 
 def current_user(request: Request) -> dict:
