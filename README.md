@@ -1,147 +1,190 @@
 # agent-identity-broker
 
-Most "AI agent" demos give the LLM a long-lived API key with full access to every tool. That works for prototypes and fails immediately in production.
+[![tests](https://img.shields.io/badge/tests-45%20passing-green)](#tests) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-This repo is a working example of how to do it properly: a broker service that authenticates the human user, mints short-lived scoped tokens for each tool call, logs every action with a correlation ID, and lets the user revoke a session mid-conversation.
+**Identity governance for AI agents.** A working example of how to wire up agent-to-tool authorization without handing your LLM a long-lived god key.
 
-It demonstrates OAuth 2.1 token exchange (RFC 8693) applied to LLM agents, the pattern most teams will need as soon as they move beyond proofs of concept.
+Most "AI agent" demos give the LLM a single API key with full access to every tool. That works for prototypes and fails immediately in production: prompt injections walk straight into the database, audit trails point at "the bot," and security has no kill switch.
 
-**Status:** in development. Week 7 of 8 (revocation + kill switch).
+This repo is a runnable counter-example. The agent never holds tool credentials. Instead:
 
-## Quickstart
+1. The **human user** authenticates once (Keycloak OIDC).
+2. The **broker** issues a 1-hour session JWT bound to that user.
+3. Before every tool call, the **agent** asks the broker for a 60-second **scoped token** for one specific tool and one specific scope.
+4. The **tool** validates the scoped token against the broker's JWKS and serves the request (or refuses).
+5. **Every step** is audited with stable `session_id` and `jti` correlation, viewable on a live HTMX dashboard.
+6. The **operator** can revoke a session or engage a global kill switch with one click, mid-conversation.
+
+The pattern is OAuth 2.1 token exchange (RFC 8693) applied to LLM agents. Most teams will end up here as soon as they move beyond prototypes.
+
+---
+
+## Quickstart (under 5 minutes)
+
+Requirements: Docker Desktop, Python 3.12, an Anthropic API key.
 
 ```bash
-docker compose up --build
+git clone https://github.com/anurag27397/agent-identity-broker
+cd agent-identity-broker
+docker compose up -d --build
 ```
 
-Then:
+This brings up Postgres, Keycloak, the broker, and three mock tool services.
 
-- Broker: http://localhost:8001 (`/health`, `/docs`, `/.well-known/jwks.json`)
-- Keycloak admin: http://localhost:8080 (`admin` / `admin`)
-- Demo user: `alice` / `alice` in realm `agent-broker`
-- Tool services (mock):
-  - customer-data: http://localhost:8101 (`/customers`, `/customers/{id}`)
-  - finance-data: http://localhost:8102 (`/accounts`, `/accounts/{id}`)
-  - email-send: http://localhost:8103 (`/send`)
+| Service       | URL                                      | Notes                                  |
+|---------------|------------------------------------------|----------------------------------------|
+| Broker        | http://localhost:8001                    | `/health`, `/docs`, `/dashboard`       |
+| Keycloak      | http://localhost:8080                    | admin / admin                          |
+| customer-data | http://localhost:8101                    | `/customers`, `/customers/{id}`        |
+| finance-data  | http://localhost:8102                    | `/accounts`, `/accounts/{id}`          |
+| email-send    | http://localhost:8103                    | `/send`                                |
+| Dashboard     | http://localhost:8001/dashboard          | live audit + operator controls         |
 
-## Try the login flow
+Demo user: `alice` / `alice` (realm role: `analyst`).
 
-1. Open http://localhost:8001/auth/login in a browser.
-2. Sign in as `alice` / `alice` on the Keycloak page.
-3. You land on a page showing your session JWT and decoded payload.
-4. `session_token` is also set as an HttpOnly cookie, so http://localhost:8001/me returns your claims.
+---
 
-The session token is signed with RS256 using a key generated on first startup and published at `/.well-known/jwks.json`. Tool services downstream will verify against that JWKS in later weeks.
+## Demo it three ways
 
-## Try token exchange
+### 1. Login flow in your browser
 
-Once you have a session token, exchange it for a 60-second scoped token:
+1. Open http://localhost:8001/auth/login.
+2. Sign in as `alice` / `alice`.
+3. You'll see your session JWT and decoded payload. A cookie is set so http://localhost:8001/me works.
+
+### 2. Exchange + tool call by hand
 
 ```bash
-SESSION="<your session JWT>"
-
-curl -sS -X POST http://localhost:8001/token/exchange \
+SESSION=$(curl -sS -X POST http://localhost:8001/auth/dev-login \
   -H "Content-Type: application/json" \
-  -d "{\"subject_token\":\"$SESSION\",\"audience\":\"customer-data\",\"scope\":\"customer-data:read\"}"
-```
+  -d '{"username":"alice","password":"alice"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['session_token'])")
 
-Allowed for `alice` (role `analyst`): `customer-data:read`, `finance-data:read`.
-Denied for `alice`: `email-send`, `customer-data:write`. Denials return HTTP 403 with the reason.
-
-Policy lives in [`broker/policy.py`](broker/policy.py) as a hardcoded role-to-scope map.
-
-## Call a tool end-to-end
-
-```bash
-# 1. Log in via browser at /auth/login, copy the session JWT.
-SESSION="<your session JWT>"
-
-# 2. Exchange for a scoped token.
 SCOPED=$(curl -sS -X POST http://localhost:8001/token/exchange \
   -H "Content-Type: application/json" \
   -d "{\"subject_token\":\"$SESSION\",\"audience\":\"customer-data\",\"scope\":\"customer-data:read\"}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-# 3. Call the tool.
 curl -sS -H "Authorization: Bearer $SCOPED" http://localhost:8101/customers
 ```
 
-Each tool service fetches the broker's JWKS at `/.well-known/jwks.json`, validates the
-signature, issuer, audience (must be its own tool ID), expiry, and the required scope.
-Failure modes return 401 (auth) or 403 (scope) with a clear reason.
+Try to mint a token for `email-send`:
 
-## Talk to the agent
+```bash
+curl -sS -X POST http://localhost:8001/token/exchange \
+  -H "Content-Type: application/json" \
+  -d "{\"subject_token\":\"$SESSION\",\"audience\":\"email-send\",\"scope\":\"email-send\"}"
+# -> 403 {"detail":"scope 'email-send' not granted to roles ['analyst']"}
+```
 
-Claude calls the same broker + tools you just exercised by hand.
+Now open http://localhost:8001/dashboard. You'll see both calls in the audit feed, correlated by `session_id`. The successful call's `jti` matches the tool call's `jti`.
+
+### 3. Claude as the agent
 
 ```bash
 python3.12 -m venv agent/.venv && source agent/.venv/bin/activate
 pip install -r agent/requirements.txt
 
-export ANTHROPIC_API_KEY=sk-ant-...  # your personal key
+export ANTHROPIC_API_KEY=sk-ant-...
 python agent/main.py
 ```
 
-The agent logs in as alice, then runs a chat loop. For every tool call Claude
-wants to make, the agent asks the broker for a 60-second scoped JWT first.
-Allowed calls execute; denied calls (e.g. `send_email` for the analyst role)
-surface back to Claude, which explains the denial to alice.
-
-Sample prompts:
-
+Try:
 - `list our customers`
 - `what is the balance of account ACC-1004?`
-- `summarize C001 in one line then email ops@example.com about it` (demonstrates the denial)
+- `summarize C001 in one line then email ops@example.com about it`
 
-See [`agent/README.md`](agent/README.md) for details.
+The third prompt is the interesting one: Claude calls `get_customer` (granted), then `send_email` (denied at the broker). The denial surfaces back to Claude as a `tool_result` error, and Claude explains the missing scope to alice in natural language.
 
-## Watch the audit dashboard
+---
 
-Open http://localhost:8001/dashboard while the agent is running. HTMX polls
-every 2 seconds, so each new event (login, scoped token mint, tool call, denial)
-appears live. Click a session in the left rail to filter to just that session's
-chain.
+## Operator controls
 
-Every event has a stable `session_id` and (for token-related events) a `jti` so
-the broker's "I minted this scoped token" can be correlated with the tool's
-"someone called me with that token" in one query. The SQLite file lives at
-`/app/data/audit.db` inside the broker container.
+While the agent is running, open the dashboard.
 
-## Revocation and kill switch
+- **Click a session** in the left rail to filter the event stream to just that session.
+- **Revoke session.** Future `/token/exchange` calls for that session JWT return `403 session has been revoked`. In-flight 60-second scoped tokens still work until they expire.
+- **Engage kill switch.** All token exchanges return `503 broker kill switch is engaged` until disengaged. Login still works; only minting is frozen.
 
-Two operator controls on the dashboard.
+Every action emits its own audit event. State persists across broker restarts.
 
-**Per-session revoke.** Click into any session, then "revoke session". From that
-moment forward any `/token/exchange` call using that session JWT fails with
-`403 session has been revoked`. The session's still-valid 1-hour session JWT
-can't mint new scoped tokens. The existing in-flight 60-second scoped tokens
-work until they expire on their own. Click "unrevoke" to restore.
+---
 
-**Broker kill switch.** A global "stop minting anything" flag. While engaged,
-`/token/exchange` returns `503 broker kill switch is engaged` for every caller.
-Useful when something looks wrong and you want to freeze the agent fleet while
-you investigate. Click "engage kill switch" in the dashboard header; click
-"disengage" to restore.
+## Architecture
 
-Both states are stored in SQLite, so they survive a broker restart. Every
-transition (revoke, unrevoke, engage, disengage) emits its own audit event.
-
-## Run tests
-
-```bash
-docker compose exec broker python -m pytest tests/ -v
-docker compose exec customer-data python -m pytest tests/ -v
 ```
++----------+      OIDC code flow       +-----------+
+|   User   +--------------------------->  Keycloak |
++----+-----+                            +-----+-----+
+     |                                        |
+     | session JWT (1h)                       |
+     v                                        |
++----+-----+                            +-----+-------+
+|  Agent   +--------------------------->|             |
+| (Claude) | POST /token/exchange       |   Broker    |
++----+-----+ (audience, scope)          |             |
+     |                                  | + audit DB  |
+     | scoped JWT (60s)                 | + revocation|
+     |                                  +-----+-------+
+     v                                        ^
++----+----+ +---------+ +-----------+         |
+| customer| | finance | | email-send|---------+
+|  -data  | |  -data  | |           | tool_call audit
++----+----+ +----+----+ +-----+-----+
+     |          |             |
+     +----------+-------------+
+         each validates the scoped JWT
+         against the broker's JWKS
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for sequence diagrams, threat model, and the production roadmap.
+
+---
 
 ## Layout
 
 ```
-broker/      FastAPI service: OIDC login, session JWTs, scoped JWTs, JWKS
-broker/tests/    18 unit + integration tests
-tools/       Three mock services sharing tool_lib (JWKS validator)
-tools/tests/     11 unit tests covering happy paths and rejection cases
+broker/      FastAPI broker: OIDC login, session + scoped JWTs, JWKS,
+             policy, audit, revocation, dashboard
+broker/tests/      34 unit + integration tests
+tools/       Three mock services sharing tool_lib (JWKS validator + audit middleware)
+tools/tests/       11 unit tests
 agent/       Claude agent (Anthropic SDK) that calls the broker + tools
 keycloak/    IdP realm config (preconfigured demo user + client)
 docs/        scope and architecture
+ARCHITECTURE.md    design, sequence diagrams, threat model, prod roadmap
 ```
 
+---
+
+## Tests
+
+```bash
+# broker
+docker compose exec broker python -m pytest tests/ -v
+
+# tools
+docker compose exec customer-data python -m pytest tests/ -v
+```
+
+Coverage: token mint/verify, policy decisions, exchange happy paths and denials,
+revocation + kill switch state transitions and their effect on `/token/exchange`,
+audit store reads/writes/aggregations, and per-tool JWKS validation
+(audience mismatch, scope mismatch, expired, tampered).
+
+---
+
+## What this is not
+
+- It is **not** a production broker. See [ARCHITECTURE.md](ARCHITECTURE.md#what-production-ready-would-look-like) for what would have to change.
+- The policy is a hardcoded `dict`. Real deployments use OPA / Cedar.
+- The revocation list is SQLite. Real deployments use Redis with TTL.
+- The dev-login endpoint is an open password grant. Real agents authenticate through a dedicated trust path.
+
+The point of this repo is to make the *pattern* concrete and runnable, not to be the artifact you ship to prod.
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).
